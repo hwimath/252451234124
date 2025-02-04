@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>제곱꼴을 포함한 식을 간단히 하기(중요)</title>
+  <!-- MathJax 로드 (자동 렌더링) -->
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" defer></script>
+  <style>
+    /* 흑백 테마 및 수식 스타일 개선 */
+    body {
+      background-color: #FFFFFF;
+      color: #000000;
+      margin: 20px;
+      font-family: sans-serif;
+      line-height: 1.6;
+    }
+    h1, h2, h3 {
+      margin: 0.5em 0;
+    }
+    .math-expression {
+      font-size: 1.2em;
+      margin: 0.5em 0;
+    }
+    .hidden {
+      display: none;
+    }
+    .energy-bar-container {
+      width: 300px; 
+      height: 20px;
+      border: 1px solid #000;
+      margin: 10px 0;
+      background-color: #fff;
+    }
+    .energy-bar-fill {
+      height: 20px;
+      background-color: #000;
+      width: 100%;
+      transition: width 0.2s linear;
+    }
+    #overallTime {
+      margin-bottom: 10px;
+    }
+    .choice-button {
+      display: block;
+      margin: 6px 0;
+      padding: 6px;
+      border: 1px solid #000;
+      background-color: #fff;
+      color: #000;
+      cursor: pointer;
+      width: 200px;
+      text-align: left;
+    }
+    .choice-button:hover {
+      background-color: #e0e0e0;
+    }
+    #response {
+      white-space: pre-wrap;
+      margin-top: 10px;
+      border: 1px solid #000;
+      padding: 5px;
+      max-width: 400px;
+    }
+  </style>
+</head>
+<body>
+  <h1>제곱꼴을 포함한 식을 간단히 하기(중요)</h1>
+
+  <!-- 0. 첫 화면: 이름 입력, 난이도 선택 -->
+  <div id="startScreen">
+    <label>이름 입력: <input type="text" id="playerName" /></label>
+    <h3>난이도 선택</h3>
+    <button onclick="startGame('최상')">최상 (20초, 문제당 20점)</button>
+    <button onclick="startGame('상')">상 (30초, 문제당 15점)</button>
+    <button onclick="startGame('중')">중 (40초, 문제당 13점)</button>
+    <button onclick="startGame('하')">하 (시간 무제한, 문제당 10점)</button>
+  </div>
+
+  <!-- 게임 화면 -->
+  <div id="gameScreen" class="hidden">
+    <!-- 전체 게임 시간 표시 -->
+    <div id="overallTime">전체 진행 시간: 0초</div>
+    
+    <!-- 남은 기회 -->
+    <div id="lives">남은 기회: 3</div>
+    
+    <!-- 에너지바(시간) -->
+    <div class="energy-bar-container" id="energyBarContainer">
+      <div class="energy-bar-fill" id="energyBarFill"></div>
+    </div>
+
+    <!-- 문제 영역 -->
+    <div id="questionArea"></div>
+    
+    <!-- 선택지 영역 -->
+    <div id="choiceArea"></div>
+
+    <!-- 피드백 영역 (정답/오답 등) -->
+    <div id="feedback" style="margin:10px 0;"></div>
+  </div>
+
+  <!-- 게임 종료 후 점수 전송 화면 -->
+  <div id="endScreen" class="hidden">
+    <h2>게임 종료!</h2>
+    <p id="finalScore"></p>
+    <p>
+      <button onclick="sendScore()">점수전송</button>
+    </p>
+    <div id="response"></div>
+  </div>
+
+  <script>
+    /**
+     * 요구사항:
+     *  - 3번 틀리면 게임 종료
+     *  - 모든 문제(69번 제외)를 모두 낸 뒤에는 무한 랜덤 반복
+     *  - 난이도별 시간/점수 차등
+     *  - 시간 제한(최상/상/중) -> 에너지바 소진 시 기회 1 감소 후 다음 문제
+     *  - 하(무제한) -> 에너지바 안 씀
+     *  - 매 문제마다 MathJax.typeset()로 수식 렌더링
+     *  - 최종 종료 시 점수 전송 버튼
+     */
+
+    /* 1. 문제 데이터: 69번 제외, 총 45문항. 
+       문제는 { condition: "...", expression: "...", choices: ["...","...","...","..."], correct: 0 } 형태 
+       (보기는 중복되지 않도록 약간 수정됨)
+    */
+    const problems = [
+      // #1
+      {
+        condition: "a>0",
+        expression: "\\sqrt{a^2}",
+        choices: ["a", "-a", "a^2", "0"],
+        correct: 0
+      },
+      // #2
+      {
+        condition: "a>0",
+        expression: "\\sqrt{(-2a)^2}",
+        choices: ["2a", "-2a", "2a^2", "0"],
+        correct: 0
+      },
+      // #3
+      {
+        condition: "a>0",
+        expression: "-\\sqrt{(5a)^2}",
+        choices: ["5a", "-5a", "0", "-a"],
+        correct: 1
+      },
+      // #4
+      {
+        condition: "a>0",
+        expression: "-\\sqrt{(-7a)^2}",
+        choices: ["-7a", "7a", "0", "-a"],
+        correct: 0
+      },
+      // #5
+      {
+        condition: "a>0",
+        expression: "\\sqrt{(6a)^2}",
+        choices: ["-6a", "6a", "0", "6a^2"],
+        correct: 1
+      },
+      // #6
+      {
+        condition: "a>0",
+        expression: "\\sqrt{(-5a)^2}",
+        choices: ["5a", "-5a", "0", "25a^2"],
+        correct: 0
+      },
+      // #7
+      {
+        condition: "a>0",
+        expression: "-\\sqrt{(7a)^2}",
+        choices: ["-7a", "7a", "0", "-a"],
+        correct: 0
+      },
+      // #8
+      {
+        condition: "a>0",
+        expression: "-\\sqrt{(-11a)^2}",
+        choices: ["11a", "-11a", "0", "a"],
+        correct: 1
+      },
+      // #9
+      {
+        condition: "a>0",
+        expression: "\\sqrt{(2a)^2} + \\sqrt{(-3a)^2}",
+        choices: ["5a", "2a-3a", "-5a", "2a^2+3a^2"],
+        correct: 0
+      },
+      // #10
+      {
+        condition: "a>0",
+        expression: "-\\sqrt{(-4a)^2} - \\sqrt{(5a)^2}",
+        choices: ["-9a", "-a", "9a", "0"],
+        correct: 0
+      },
+      // #11
+      {
+        condition: "a>0",
+        expression: "\\sqrt{(-a)^2} - \\sqrt{(-7a)^2}",
+        choices: ["8a", "-6a", "6a", "-8a"],
+        correct: 1
+      },
+      // #12
+      {
+        condition: "a>0",
+        expression: "\\sqrt{(6a)^2} - \\sqrt{(-5a)^2}",
+        choices: ["11a", "a", "-a", "0"],
+        correct: 1
+      },
+      // #13
+      {
+        condition: "a>0",
+        expression: "\\sqrt{(5a)^2} - \\sqrt{(-3a)^2}",
+        choices: ["2a", "-2a", "8a", "15a"],
+        correct: 0
+      },
+      // #14
+      {
+        condition: "a>0",
+        expression: "\\sqrt{(2a)^2} + \\sqrt{(3a)^2}",
+        choices: ["6a", "5a", "2a+9a", "0"],
+        correct: 1
+      },
+      // #15
+      {
+        condition: "a>0",
+        expression: "\\sqrt{(-3a)^2} + \\sqrt{(5a)^2}",
+        choices: ["3a-5a", "-8a", "8a", "2a"],
+        correct: 2
+      },
+      // #16
+      {
+        condition: "a>0",
+        expression: "\\sqrt{(-a)^2} + \\sqrt{(-2a)^2}",
+        choices: ["a", "3a", "-3a", "2a"],
+        correct: 1
+      },
+      // #17
+      {
+        condition: "a<0",
+        expression: "\\sqrt{(2a)^2}",
+        choices: ["2a", "-2a", "-a", "0"],
+        correct: 1
+      },
+      // #18
+      {
+        condition: "a<0",
+        expression: "\\sqrt{(4a)^2}",
+        choices: ["4a", "-4a", "2a", "0"],
+        correct: 1
+      },
+      // #19
+      {
+        condition: "a<0",
+        expression: "\\sqrt{(-3a)^2}",
+        choices: ["3a", "-3a", "9a", "0"],
+        correct: 1
+      },
+      // #20
+      {
+        condition: "a<0",
+        expression: "-\\sqrt{(10a)^2}",
+        choices: ["10a", "-10a", "10|a|", "0"],
+        correct: 0
+      },
+      // #21
+      {
+        condition: "a<0",
+        expression: "-\\sqrt{(-8a)^2}",
+        choices: ["-8a", "8a", "16a", "0"],
+        correct: 1
+      },
+      // #40
+      {
+        condition: "0<x<2",
+        expression: "\\sqrt{x^2} + \\sqrt{(x-2)^2}",
+        choices: ["2", "0", "x+(x-2)", "2x-1"],
+        correct: 0
+      },
+      // #41
+      {
+        condition: "0<x<2",
+        expression: "\\sqrt{(x-2)^2} - \\sqrt{(-x)^2}",
+        choices: ["2-x", "2-2x", "2x-2", "0"],
+        correct: 1
+      },
+      // #42
+      {
+        condition: "0<x<2",
+        expression: "\\sqrt{(2-x)^2} + \\sqrt{x^2}",
+        choices: ["2", "0", "(x-2)+x", "2x"],
+        correct: 0
+      },
+      // #43
+      {
+        condition: "0<x<2",
+        expression: "\\sqrt{(2-x)^2} - \\sqrt{(-x)^2}",
+        choices: ["2", "2-2x", "x-2", "0"],
+        correct: 1
+      },
+      // #46
+      {
+        condition: "x<2",
+        expression: "\\sqrt{(x-2)^2}",
+        choices: ["x-2", "2-x", "0", "x-1"],
+        correct: 1
+      },
+      // #47
+      {
+        condition: "x<2",
+        expression: "-\\sqrt{(x-2)^2}",
+        choices: ["2-x", "x-2", "2x-2", "0"],
+        correct: 1
+      },
+      // #48
+      {
+        condition: "x<1",
+        expression: "\\sqrt{(1-x)^2}",
+        choices: ["1-x", "x-1", "2-2x", "0"],
+        correct: 0
+      },
+      // #49
+      {
+        condition: "x\\ge -2",
+        expression: "\\sqrt{(x+2)^2}",
+        choices: ["x+2", "-x-2", "0", "2-x"],
+        correct: 0
+      },
+      // #50
+      {
+        condition: "x>5",
+        expression: "\\sqrt{(x-5)^2}",
+        choices: ["x-5", "5-x", "0", "x+5"],
+        correct: 0
+      },
+      // #51
+      {
+        condition: "x>-2",
+        expression: "\\sqrt{(2+x)^2}",
+        choices: ["2+x", "-2-x", "0", "2-x"],
+        correct: 0
+      },
+      // #52
+      {
+        condition: "x>3",
+        expression: "\\sqrt{(3-x)^2}",
+        choices: ["3-x", "x-3", "3+x", "0"],
+        correct: 1
+      },
+      // #53
+      {
+        condition: "x>5",
+        expression: "-\\sqrt{(x-5)^2}",
+        choices: ["5-x", "x+5", "x-5", "0"],
+        correct: 0
+      },
+      // #54
+      {
+        condition: "x>5",
+        expression: "\\sqrt{(5-x)^2}",
+        choices: ["x-5", "5-x", "0", "2x-5"],
+        correct: 0
+      },
+      // #55
+      {
+        condition: "a>b",
+        expression: "\\sqrt{(b-a)^2} - \\sqrt{(a-b)^2}",
+        choices: ["a-b", "(b-a)-(a-b)", "0", "2(a-b)"],
+        correct: 2
+      },
+// #60
+      {
+        condition: "a<1",
+        expression: "\\sqrt{(a-1)^2} - \\sqrt{(1-a)^2}",
+        choices: ["0", "a-1", "1-a", "2(a-1)"],
+        correct: 0
+      },
+      // #64
+      {
+        condition: "a>0,\\;b<0",
+        expression: "\\sqrt{a^2} + \\sqrt{b^2}",
+        choices: ["a-b", "a+b", "2a", "0"],
+        correct: 0
+      },
+      // #65
+      {
+        condition: "a>0,\\;b<0",
+        expression: "\\sqrt{(a-b)^2}",
+        choices: ["a-b", "b-a", "a+b", "0"],
+        correct: 0
+      },
+      // #66
+      {
+        condition: "a>0,\\;b<0",
+        expression: "\\sqrt{a^2} - \\sqrt{b^2}",
+        choices: ["a+b", "a-b", "b-a", "0"],
+        correct: 0
+      },
+      // #67
+      {
+        condition: "a>0,\\;b<0",
+        expression: "\\sqrt{(b-a)^2}",
+        choices: ["b-a", "a-b", "a+b", "0"],
+        correct: 1
+      },
+      // #68
+      {
+        condition: "a>0,\\;b<0",
+        expression: "\\sqrt{(a-b)^2} - \\sqrt{a^2} + \\sqrt{b^2}",
+        choices: ["-2b", "a-2b", "2a", "0"],
+        correct: 0
+      }
+    ];
+
+    /* 난이도별 제한시간(초) 및 문제당 점수 설정 */
+    const difficultySettings = {
+      "최상": { timeLimit: 20, scorePerQuestion: 20 },
+      "상":   { timeLimit: 30, scorePerQuestion: 15 },
+      "중":   { timeLimit: 40, scorePerQuestion: 13 },
+      "하":   { timeLimit: Infinity, scorePerQuestion: 10 }
+    };
+
+    /* 전역 변수들 */
+    let currentDifficulty = null;
+    let timeLimit = 0;        // 현재 문제 당 남은 시간(에너지바)
+    let scorePerQuestion = 0; // 난이도별 점수
+    let currentScore = 0;
+    let livesLeft = 3;
+    let intervalID = null;    // 문제 제한시간(에너지바)용
+    let overallTime = 0;      // 게임 전체 진행 시간(초)
+    let overallTimerID = null;
+    let playerName = "";
+    let problemPool = [];     // 모든 문제를 섞어 담을 배열
+    let usedProblemsCount = 0; // 처음 45문제 사용 후 무한 랜덤
+
+    /* 셔플 함수 */
+    function shuffleArray(array) {
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+    }
+
+    /* 게임 시작 */
+    function startGame(difficulty) {
+      const nameInput = document.getElementById('playerName');
+      playerName = nameInput.value.trim();
+      if (!playerName) {
+        alert("이름을 입력해주세요.");
+        return;
+      }
+      currentDifficulty = difficulty;
+      timeLimit = difficultySettings[difficulty].timeLimit;
+      scorePerQuestion = difficultySettings[difficulty].scorePerQuestion;
+      
+      // 문제 배열 복제 및 섞기
+      problemPool = [...problems];
+      shuffleArray(problemPool);
+
+      // 초기화
+      currentScore = 0;
+      livesLeft = 3;
+      usedProblemsCount = 0;
+      overallTime = 0;
+
+      // UI 전환
+      document.getElementById('startScreen').classList.add('hidden');
+      document.getElementById('gameScreen').classList.remove('hidden');
+      document.getElementById('endScreen').classList.add('hidden');
+
+      // 전체 시간 카운트 시작
+      overallTimerID = setInterval(() => {
+        overallTime++;
+        document.getElementById('overallTime').innerText = "전체 진행 시간: " + overallTime + "초";
+      }, 1000);
+
+      updateLives();
+      showNextProblem();
+    }
+
+    /* 남은 기회 표시 */
+    function updateLives() {
+      document.getElementById('lives').innerText = "남은 기회: " + livesLeft;
+    }
+
+    /* 다음 문제 표시 (처음 45문제 후 무한 랜덤) */
+    function showNextProblem() {
+      clearInterval(intervalID);
+      let problem;
+      if (usedProblemsCount < problemPool.length) {
+        problem = problemPool[usedProblemsCount];
+        usedProblemsCount++;
+      } else {
+        const randomIndex = Math.floor(Math.random() * problemPool.length);
+        problem = problemPool[randomIndex];
+      }
+      displayProblem(problem);
+
+      if (timeLimit === Infinity) {
+        document.getElementById('energyBarContainer').style.display = "none";
+      } else {
+        document.getElementById('energyBarContainer').style.display = "block";
+        startTimer();
+      }
+    }
+
+    /* 문제 실제 표시하기  
+       → 조건에 부등호(<, >)가 포함된 경우 LaTeX 명령어 \\lt, \\gt로 치환하여 렌더링 */
+    function displayProblem(problem) {
+      const qArea = document.getElementById('questionArea');
+      const cArea = document.getElementById('choiceArea');
+      const fb = document.getElementById('feedback');
+      fb.innerText = "";
+      
+      let cond = "";
+      if (problem.condition) {
+        // 조건 문자열에 포함된 '<'와 '>'를 LaTeX 명령어로 치환
+        cond = problem.condition.replace(/</g, "\\lt ").replace(/>/g, "\\gt ");
+      }
+      
+      qArea.innerHTML = `
+        <div>
+          ${cond ? `<strong>조건:</strong> <span class="math-expression">\\(${cond}\\)</span><br/>` : ""}
+          <strong>다음 식을 간단히 하시오:</strong>
+          <div class="math-expression">\\(${problem.expression}\\)</div>
+        </div>
+      `;
+
+      // 보기 버튼 생성 (섞인 순서대로)
+      const indices = [0, 1, 2, 3];
+      shuffleArray(indices);
+      cArea.innerHTML = "";
+      indices.forEach((shuffledIdx, i) => {
+        const btn = document.createElement('button');
+        btn.className = "choice-button";
+        btn.innerHTML = `\\(${problem.choices[shuffledIdx]}\\)`;
+        btn.onclick = () => checkAnswer(problem, i, indices, problem.correct);
+        cArea.appendChild(btn);
+      });
+      
+      // MathJax 재렌더링
+      MathJax.typeset();
+    }
+
+    /* 정답 체크 */
+    function checkAnswer(problem, chosenPosition, indices, correctIdx) {
+      const fb = document.getElementById('feedback');
+      if (indices[chosenPosition] === correctIdx) {
+        fb.innerText = "정답입니다! +" + scorePerQuestion + "점";
+        currentScore += scorePerQuestion;
+        stopTimerAndGoNext();
+      } else {
+        livesLeft--;
+        updateLives();
+        const correctText = problem.choices[correctIdx];
+        fb.innerText = "틀렸습니다! 정답은 '\\(" + correctText + "\\)' 입니다.";
+        if (livesLeft <= 0) {
+          endGame();
+        } else {
+          stopTimerAndGoNext();
+        }
+      }
+    }
+
+    /* 타이머 시작: timeLimit초 동안 에너지바 감소 */
+    function startTimer() {
+      let remaining = timeLimit;
+      const barFill = document.getElementById('energyBarFill');
+      barFill.style.width = "100%";
+
+      intervalID = setInterval(() => {
+        remaining--;
+        const ratio = (remaining / timeLimit) * 100;
+        barFill.style.width = ratio + "%";
+
+        if (remaining <= 0) {
+          clearInterval(intervalID);
+          livesLeft--;
+          updateLives();
+          const fb = document.getElementById('feedback');
+          fb.innerText = "시간이 초과되었습니다! 기회가 1 줄어듭니다.";
+          if (livesLeft <= 0) {
+            endGame();
+          } else {
+            stopTimerAndGoNext();
+          }
+        }
+      }, 1000);
+    }
+
+    /* 문제 완료 후 타이머 정리 후 다음 문제로 */
+    function stopTimerAndGoNext() {
+      clearInterval(intervalID);
+      setTimeout(() => {
+        showNextProblem();
+      }, 1000);
+    }
+
+    /* 게임 종료 */
+    function endGame() {
+      clearInterval(intervalID);
+      clearInterval(overallTimerID);
+      document.getElementById('gameScreen').classList.add('hidden');
+      document.getElementById('endScreen').classList.remove('hidden');
+      document.getElementById('finalScore').innerText = "최종 점수: " + currentScore + "점";
+    }
+
+    /* 점수 전송 */
+    function sendScore() {
+      saveData(
+        "제곱꼴을 포함한 식 간단히",
+        playerName,
+        currentScore,
+        overallTime
+      );
+    }
+
+    /* 서버로 데이터 POST 요청 함수 */
+    async function saveData(game, name, score, elapsedTime) {
+      const FUNCTION_URL = "https://us-central1-record-f420d.cloudfunctions.net/report";
+      const requestData = {
+        game,
+        name,
+        score: parseInt(score, 10),
+        elapsedTime: parseInt(elapsedTime, 10)
+      };
+
+      try {
+        const response = await fetch(FUNCTION_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(requestData)
+        });
+
+        const responseData = await response.json();
+
+        if (response.ok) {
+          document.getElementById('response').innerText = 
+            `성공: ${JSON.stringify(responseData, null, 2)}`;
+        } else {
+          document.getElementById('response').innerText = 
+            `오류: ${JSON.stringify(responseData, null, 2)}`;
+        }
+      } catch (error) {
+        console.error('요청 실패:', error);
+        document.getElementById('response').innerText = 
+          `네트워크 오류: ${error.message}`;
+      }
+    }
+  </script>
+</body>
+</html>
